@@ -1,4 +1,10 @@
-## ParaBART
+# ParaBART
+
+Modify the ParaBART on the base of its original implement.
+
+The previous README can be found [here](https://github.com/uclanlp/ParaBART/blob/master/README.md).
+
+<!-- ## ParaBART
 
 Code for our NAACL-2021 paper ["Disentangling Semantics and Syntax in Sentence Embeddings with Pre-trained Language Models"](https://arxiv.org/abs/2104.05115).
 
@@ -32,4 +38,4 @@ Coming soon
    
 ### Author
 
-James Yipeng Huang / [@jyhuang36](https://github.com/jyhuang36)
+James Yipeng Huang / [@jyhuang36](https://github.com/jyhuang36) -->
