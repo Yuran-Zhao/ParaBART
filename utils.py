@@ -1,7 +1,14 @@
+import torch
+import torch.nn as nn
+from torch.utils.data import Dataset
 import os, errno
 import numpy as np
 from datetime import datetime
 import pdb
+from numpy.lib.index_tricks import IndexExpression
+import json
+
+import glob
 
 
 def make_path(path):
@@ -57,3 +64,23 @@ def deleaf(tree):
 
     nonleaves = " ".join(arr)
     return nonleaves.split()
+
+
+def last_checkpoint(path):
+    names = glob.glob(os.path.join(path, "*.pt"))
+    if len(names) == 0:
+        return None, None
+    oldest_counter = 0
+    checkpoint_name = names[0]
+    for name in names:
+        counter = name.rstrip(".pt").split("epoch")[-1]
+        if not counter.isdigit():
+            continue
+        else:
+            counter = int(counter)
+
+        if counter > oldest_counter:
+            checkpoint_name = name
+            oldest_counter = counter
+
+    return checkpoint_name, oldest_counter

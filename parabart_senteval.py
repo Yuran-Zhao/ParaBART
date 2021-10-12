@@ -8,11 +8,22 @@ import pickle
 import torch
 import argparse
 from transformers import BartTokenizer, BartConfig, BartModel
+import pdb
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--model_dir', type=str, default="./model/")
+parser.add_argument('--model_name', type=str, default="model_epoch10.pt")
 parser.add_argument('--cache_dir', type=str, default="./bart-base/")
 parser.add_argument('--senteval_dir', type=str, default="../SentEval/")
+# parser.add_argument('--structural_parabart', type=bool, default=False)
+# parser.add_argument('--new_decoder', type=bool, default=False)
+parser.add_argument('--model_type', type=str, default='baseline')
+parser.add_argument('--syntax_encoder_layer_num', type=int, default=1)
+parser.add_argument('--adv_rank', type=int, default=64)
+parser.add_argument(
+    '--use_GAT',
+    action='store_true',
+    help="Use Graph Attention Networks as syntax encoder or not.")
 args = parser.parse_args()
 
 # import SentEval
@@ -20,7 +31,16 @@ sys.path.insert(0, args.senteval_dir)
 import senteval
 
 sys.path.insert(0, args.model_dir)
-from parabart import ParaBart
+if args.model_type == 'structural':
+    from structural_parabart import StructuralParaBart as ParaBart
+elif args.model_type == 'new_decoder':
+    from new_decoder_parabart import NewDecoderParaBart as ParaBart
+else:
+    from parabart import ParaBart
+
+# if args.structural_parabart:
+# elif args.new_decoder:
+# else:
 
 
 # SentEval prepare and batcher
@@ -50,14 +70,24 @@ def build_embeddings(model, tokenizer, sents):
 print("==== loading model ====")
 config = BartConfig.from_pretrained('facebook/bart-base',
                                     cache_dir=args.cache_dir)
+config.syntax_encoder_layer_num = args.syntax_encoder_layer_num
+config.rank = args.adv_rank
+config.use_GAT = args.use_GAT
+# if args.structural_parabart:
+#     embed_model = StructuralParaBart(config)
+# else:
+#     embed_model = ParaBart(config)
 
 embed_model = ParaBart(config)
+
+# pdb.set_trace()
 
 tokenizer = BartTokenizer.from_pretrained('facebook/bart-base',
                                           cache_dir=args.cache_dir)
 
 embed_model.load_state_dict(
-    torch.load(os.path.join(args.model_dir, "model.pt"), map_location='cpu'))
+    torch.load(os.path.join(args.model_dir, args.model_name),
+               map_location='cpu'))
 
 embed_model = embed_model.cuda()
 

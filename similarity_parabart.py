@@ -7,14 +7,29 @@ from transformers.modeling_bart import (PretrainedBartModel, LayerNorm,
                                         LearnedPositionalEmbedding,
                                         _prepare_bart_decoder_inputs,
                                         _make_linear_from_emb)
+
+import dgl.nn as dglnn
+import dgl
+import pdb
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+from transformers.modeling_bart import (PretrainedBartModel, LayerNorm,
+                                        EncoderLayer, DecoderLayer,
+                                        LearnedPositionalEmbedding,
+                                        _prepare_bart_decoder_inputs,
+                                        _make_linear_from_emb)
 import pdb
 
 
-class ParaBart(PretrainedBartModel):
+class SimilarityParaBart(PretrainedBartModel):
     def __init__(self, config):
         super().__init__(config)
 
         self.cosine = nn.CosineSimilarity()
+        self.alpha = nn.Parameter(torch.rand(size=(1, ), requires_grad=True))
 
         self.shared = nn.Embedding(config.vocab_size, config.d_model,
                                    config.pad_token_id)
@@ -138,13 +153,21 @@ class ParaBart(PretrainedBartModel):
 
         return adv_outputs
 
-    def compute_similarity(self, sent1_token_ids, sent2_token_ids):
+    def inner_compute_similarity(self, sent1_token_ids, sent2_token_ids):
         sent1_embeds = self.encoder.embed(sent1_token_ids).detach()
         sent2_embeds = self.encoder.embed(sent2_token_ids).detach()
         sent1_embeds = torch.squeeze(sent1_embeds, 1)
         sent2_embeds = torch.squeeze(sent2_embeds, 1)
         similarity = self.cosine(sent1_embeds, sent2_embeds)
         return nn.functional.softmax(similarity, dim=0)
+
+    def compute_similarity(self, sent1_token_ids, sent2_token_ids,
+                           similarity_score):
+        inner_similarity = self.inner_compute_similarity(
+            sent1_token_ids, sent2_token_ids)
+
+        return self.alpha * inner_similarity + (1 -
+                                                self.alpha) * similarity_score
 
 
 class ParaBartEncoder(nn.Module):
