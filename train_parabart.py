@@ -16,6 +16,7 @@ from transformers import BartTokenizer, BartConfig, BartModel
 from parabart import ParaBart
 # from new_decoder_parabart import NewDecoderParaBart as ParaBart
 from structural_parabart import StructuralParaBart
+from sem_extractor import SemExtractor
 # from tokenizers import Tokenizer
 # from tokenizers.models import WordLevel
 
@@ -104,6 +105,13 @@ parser.add_argument(
     '--similarity_as_weights',
     action='store_true',
     help="Use the similarity between sentence pairs as the weights of loss.")
+parser.add_argument(
+    '--beta',
+    type=float,
+    default=0.8,
+    help=
+    "Beta used to balance the mixed attention in decoder. beta * sem + ( 1 - beta) * syn"
+)
 
 # parser.add_argument('--adv_graph', type=bool, default=False)
 args = parser.parse_args()
@@ -688,7 +696,7 @@ with open('synt_vocab.pkl', 'rb') as f:
     synt_vocab = pickle.load(f)
 
 print("==== loading data ====")
-if args.mode == 'baseline':
+if args.mode == 'baseline' or args.mode == 'mixed_attention':
     num = 1000000
     # num = 6000
     train_idxs, valid_idxs = random_split(
@@ -739,6 +747,7 @@ config.max_synt_len = args.max_synt_len
 config.syntax_encoder_layer_num = args.syntax_encoder_layer_num
 config.rank = args.adv_rank
 config.use_GAT = args.use_GAT
+config.beta = args.beta
 
 # NOTE: due to the consistance of tokenizer and embeddings layer in pre-trained Bart Model
 # cannot use my own tokenizer.
@@ -752,6 +761,8 @@ if args.mode == 'baseline':
     model = ParaBart(config)
 elif args.mode == 'structural':
     model = StructuralParaBart(config)
+elif args.mode == 'mixed_attention':
+    model = SemExtractor(config)
 
 if os.path.exists(args.model_dir):
     checkpoint, last_epoch = last_checkpoint(args.model_dir)
@@ -792,7 +803,7 @@ for n, p in model.named_parameters():
     else:
         all_other_params.append(p)
 
-if args.mode == 'baseline':
+if args.mode == 'baseline' or args.mode == 'mixed_attention':
     optimizer = optim.AdamW([{
         'params': fast_params,
         'lr': args.fast_lr
@@ -870,7 +881,7 @@ adv_distance_criterion = L1DistanceLoss(model.device)
 adv_depth_criterion = L1DepthLoss(model.device)
 # adv_contractive_criterion
 
-if args.mode == 'baseline':
+if args.mode == 'baseline' or args.mode == 'mixed_attention':
     # adv_criterion = nn.BCEWithLogitsLoss().cuda()
     def adv_criterion(pred_bow, true_bow):
         return adv_bow_criterion(pred_bow, true_bow)
@@ -915,7 +926,7 @@ make_path(args.model_dir)
 print("==== start training ====")
 
 for epoch in range(last_epoch + 1, args.n_epoch + 1):
-    if args.mode == 'baseline':
+    if args.mode == 'baseline' or args.mode == 'mixed_attention':
         train(epoch, model, tokenizer, optimizer, args)
     elif args.mode == 'structural':
         structural_train(epoch, model, tokenizer, optimizer, args)
