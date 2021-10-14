@@ -146,6 +146,27 @@ class ParaBart(PretrainedBartModel):
         similarity = self.cosine(sent1_embeds, sent2_embeds)
         return nn.functional.softmax(similarity, dim=0)
 
+    def compute_similairty_matrix(self,
+                                  sent1_token_ids,
+                                  sent2_token_ids,
+                                  epsilon=1e-8):
+        bs = sent1_token_ids.shape[0]
+        sent1_embeds = self.encoder.embed(sent1_token_ids).detach()
+        sent2_embeds = self.encoder.embed(sent2_token_ids).detach()
+        # (bs, d_model)
+        sent1_embeds = torch.squeeze(sent1_embeds, 1)
+        sent2_embeds = torch.squeeze(sent2_embeds, 1)
+        results = torch.mm(sent1_embeds, sent2_embeds.permute(1, 0))
+        # (bs,1)
+        sent1_norms = torch.norm(sent1_embeds, p=2, dim=1).unsqueeze(dim=1)
+        # (1, bs)
+        sent2_norms = torch.norm(sent2_embeds, p=2, dim=1).unsqueeze(dim=0)
+        # (bs, bs)
+        norms = torch.mm(sent1_norms, sent2_norms).float()
+        mask = torch.full((bs, bs), fill_value=epsilon).cuda()
+        dominator = torch.where(norms > epsilon, norms, mask).cuda()
+        return torch.div(results, dominator)
+
 
 class ParaBartEncoder(nn.Module):
     def __init__(self, config, embed_tokens):

@@ -112,6 +112,9 @@ parser.add_argument(
     help=
     "Beta used to balance the mixed attention in decoder. beta * sem + ( 1 - beta) * syn"
 )
+parser.add_argument('--contrastive_learning',
+                    action='store_true',
+                    help="Use the contrastive learning loss.")
 
 # parser.add_argument('--adv_graph', type=bool, default=False)
 args = parser.parse_args()
@@ -428,6 +431,10 @@ def train(epoch, model, tokenizer, optimizer, args):
             loss = para_criterion(outputs, targs)
             if epoch > 1:
                 loss -= 0.1 * adv_criterion(adv_outputs, adv_targs)
+        if args.contrastive_learning:
+            similarity_matrix = model.compute_similairty_matrix(
+                sent1_token_ids, sent2_token_ids).cuda()
+            loss += contrastive_criterion(similarity_matrix)
         loss.backward()
         total_loss += loss.item()
 
@@ -464,15 +471,26 @@ def train(epoch, model, tokenizer, optimizer, args):
             optimizer.zero_grad()
 
         if (it + 1) % args.log_interval == 0 or it == 0:
-            para_1_2_loss, para_2_1_loss, adv_1_loss, adv_2_loss = evaluate(
-                model, tokenizer, args)
-            valid_loss = para_1_2_loss + para_2_1_loss - 0.1 * adv_1_loss - 0.1 * adv_2_loss
-            print(
-                "| ep {:2d}/{} | it {:3d}/{} | {:5.2f} s | adv loss {:.4f} | loss {:.4f} | para 1-2 loss {:.4f} | para 2-1 loss {:.4f} | adv 1 loss {:.4f} | adv 2 loss {:.4f} | valid loss {:.4f} |"
-                .format(epoch, args.n_epoch, it + 1, n_it,
-                        timer.get_time_from_last(), adv_total_loss, total_loss,
-                        para_1_2_loss, para_2_1_loss, adv_1_loss, adv_2_loss,
-                        valid_loss))
+            if args.contrastive_learning:
+                para_1_2_loss, para_2_1_loss, adv_1_loss, adv_2_loss, con_loss = evaluate(
+                    model, tokenizer, args)
+                valid_loss = para_1_2_loss + para_2_1_loss - 0.1 * adv_1_loss - 0.1 * adv_2_loss + con_loss
+                print(
+                    "| ep {:2d}/{} | it {:3d}/{} | {:5.2f} s | adv loss {:.4f} | loss {:.4f} | para 1-2 loss {:.4f} | para 2-1 loss {:.4f} | adv 1 loss {:.4f} | adv 2 loss {:.4f} | contrastive loss {:.4f} | valid loss {:.4f} |"
+                    .format(epoch, args.n_epoch, it + 1, n_it,
+                            timer.get_time_from_last(), adv_total_loss,
+                            total_loss, para_1_2_loss, para_2_1_loss,
+                            adv_1_loss, adv_2_loss, con_loss, valid_loss))
+            else:
+                para_1_2_loss, para_2_1_loss, adv_1_loss, adv_2_loss = evaluate(
+                    model, tokenizer, args)
+                valid_loss = para_1_2_loss + para_2_1_loss - 0.1 * adv_1_loss - 0.1 * adv_2_loss
+                print(
+                    "| ep {:2d}/{} | it {:3d}/{} | {:5.2f} s | adv loss {:.4f} | loss {:.4f} | para 1-2 loss {:.4f} | para 2-1 loss {:.4f} | adv 1 loss {:.4f} | adv 2 loss {:.4f} | valid loss {:.4f} |"
+                    .format(epoch, args.n_epoch, it + 1, n_it,
+                            timer.get_time_from_last(), adv_total_loss,
+                            total_loss, para_1_2_loss, para_2_1_loss,
+                            adv_1_loss, adv_2_loss, valid_loss))
             writer.add_scalar('Loss/train', total_loss,
                               (epoch - 1) * 16 + (it + 1) // args.log_interval)
             writer.add_scalar('Loss/valid', valid_loss,
@@ -620,6 +638,7 @@ def evaluate(model, tokenizer, args):
     para_2_1_loss = 0.0
     adv_1_loss = 0.0
     adv_2_loss = 0.0
+    con_loss = 0.0
     with torch.no_grad():
         for idxs in valid_loader:
 
@@ -682,6 +701,14 @@ def evaluate(model, tokenizer, args):
                 para_2_1_loss += para_criterion(outputs, targs)
                 adv_2_loss += adv_criterion(adv_outputs, adv_targs)
 
+            if args.contrastive_learning:
+                similarity_matrix = model.compute_similairty_matrix(
+                    sent1_token_ids, sent2_token_ids).cuda()
+                con_loss += contrastive_criterion(similarity_matrix)
+    if args.contrastive_learning:
+        return para_1_2_loss / len(valid_loader), para_2_1_loss / len(
+            valid_loader), adv_1_loss / len(valid_loader), adv_2_loss / len(
+                valid_loader), con_loss / len(valid_loader)
     return para_1_2_loss / len(valid_loader), para_2_1_loss / len(
         valid_loader), adv_1_loss / len(valid_loader), adv_2_loss / len(
             valid_loader)
@@ -876,6 +903,21 @@ else:
     para_criterion = nn.CrossEntropyLoss(
         ignore_index=model.config.pad_token_id).cuda()
     adv_bow_criterion = nn.BCEWithLogitsLoss().cuda()
+
+if args.contrastive_learning:
+
+    def contrastive_criterion(similarity_matrix, tau=0.05):
+        bs = similarity_matrix.shape[0]
+        assert tuple(similarity_matrix.shape) == tuple((bs, bs))
+        similarity_matrix = similarity_matrix / tau
+        mask = torch.eye(bs).cuda()
+        # inf_matrix = torch.full((bs, bs), float('-inf'))
+        # positive_matrix = torch.where(mask.bool(), similarity_matrix,
+        #                               inf_matrix)
+        positive = torch.sum(similarity_matrix * mask)
+        negative = torch.sum(torch.exp(similarity_matrix) * (1 - mask), dim=-1)
+        return (-positive + torch.sum(torch.log(negative))) / bs
+
 
 adv_distance_criterion = L1DistanceLoss(model.device)
 adv_depth_criterion = L1DepthLoss(model.device)
