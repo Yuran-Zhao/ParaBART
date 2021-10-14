@@ -911,9 +911,6 @@ if args.contrastive_learning:
         assert tuple(similarity_matrix.shape) == tuple((bs, bs))
         similarity_matrix = similarity_matrix / tau
         mask = torch.eye(bs).cuda()
-        # inf_matrix = torch.full((bs, bs), float('-inf'))
-        # positive_matrix = torch.where(mask.bool(), similarity_matrix,
-        #                               inf_matrix)
         positive = torch.sum(similarity_matrix * mask)
         negative = torch.sum(torch.exp(similarity_matrix) * (1 - mask), dim=-1)
         return (-positive + torch.sum(torch.log(negative))) / bs
@@ -921,7 +918,6 @@ if args.contrastive_learning:
 
 adv_distance_criterion = L1DistanceLoss(model.device)
 adv_depth_criterion = L1DepthLoss(model.device)
-# adv_contractive_criterion
 
 if args.mode == 'baseline' or args.mode == 'mixed_attention':
     # adv_criterion = nn.BCEWithLogitsLoss().cuda()
@@ -956,9 +952,6 @@ elif args.mode == 'structural':
                 loss_bow = adv_bow_criterion(pred_bow, true_bow)
             else:
                 loss_bow = 0
-
-            # if args.adv_contractive
-            #     loss_constractive = adv_contractive_criterion(embeds, similarity)
 
             return args.adv_coefficient * loss_distance + args.adv_coefficient * loss_depth + loss_bow
 
