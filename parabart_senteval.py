@@ -21,6 +21,13 @@ parser.add_argument('--model_type', type=str, default='baseline')
 parser.add_argument('--syntax_encoder_layer_num', type=int, default=1)
 parser.add_argument('--adv_rank', type=int, default=64)
 parser.add_argument(
+    '--beta',
+    type=float,
+    default=0.8,
+    help=
+    "Beta used to balance the mixed attention in decoder. beta * sem + ( 1 - beta) * syn"
+)
+parser.add_argument(
     '--use_GAT',
     action='store_true',
     help="Use Graph Attention Networks as syntax encoder or not.")
@@ -35,6 +42,8 @@ if args.model_type == 'structural':
     from structural_parabart import StructuralParaBart as ParaBart
 elif args.model_type == 'new_decoder':
     from new_decoder_parabart import NewDecoderParaBart as ParaBart
+elif args.model_type == 'mixed_attention':
+    from sem_extractor import SemExtractor as ParaBart
 else:
     from parabart import ParaBart
 
@@ -73,6 +82,7 @@ config = BartConfig.from_pretrained('facebook/bart-base',
 config.syntax_encoder_layer_num = args.syntax_encoder_layer_num
 config.rank = args.adv_rank
 config.use_GAT = args.use_GAT
+config.beta = args.beta
 # if args.structural_parabart:
 #     embed_model = StructuralParaBart(config)
 # else:
